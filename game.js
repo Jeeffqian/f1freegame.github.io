@@ -137,14 +137,18 @@ function updateCamera(dt) {
   if (!car) return;
 
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(car.quaternion);
-  const targetPos = car.position.clone()
-    .addScaledVector(forward, -11)
-    .add(new THREE.Vector3(0, 5, 0));
 
-  camera.position.lerp(targetPos, 1 - Math.pow(0.001, dt));
-  const lookAt = car.position.clone().add(new THREE.Vector3(0, 1.2, 0))
+const targetPos = car.position.clone()
+    .addScaledVector(forward, -12)
+    .add(new THREE.Vector3(0, 7, 0));
+
+camera.position.lerp(targetPos, 1 - Math.pow(0.001, dt));
+
+const lookAt = car.position.clone()
+    .add(new THREE.Vector3(0, 1.5, 0))
     .addScaledVector(forward, 8);
-  camera.lookAt(lookAt);
+
+camera.lookAt(lookAt);
 }
 
 function animate() {
