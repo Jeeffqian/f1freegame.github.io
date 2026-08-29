@@ -2,7 +2,7 @@
 const container = document.getElementById('canvas-container');
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb); // 天蓝色
+scene.background = new THREE.Color(0x87ceeb);
 scene.fog = new THREE.FogExp2(0x87ceeb, 0.0005);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 4000);
@@ -12,7 +12,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
-// 2. 光源设置
+// 2. 光源
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
 
@@ -23,7 +23,7 @@ dirLight.shadow.mapSize.width = 2048;
 dirLight.shadow.mapSize.height = 2048;
 scene.add(dirLight);
 
-// 3. 地面 (草地)
+// 3. 草地地面
 const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(5000, 5000),
     new THREE.MeshLambertMaterial({ color: 0x3b7a57 })
@@ -32,31 +32,41 @@ ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-// 4. 精简无交叉的 Silverstone 赛道核心拓扑点（按顺时针顺畅连接）
-const silverstonePoints = [
-    new THREE.Vector3(0, 0, 0),        // Start / Hamilton Straight
-    new THREE.Vector3(250, 0, 150),    // Abbey & Farm Curve
-    new THREE.Vector3(450, 0, 0),      // Village & Loop
-    new THREE.Vector3(300, 0, -300),   // Aintree & Wellington Straight
-    new THREE.Vector3(-200, 0, -350),  // Brooklands
-    new THREE.Vector3(-450, 0, -150),  // Luffield & Woodcote
-    new THREE.Vector3(-350, 0, 250),   // Copse Corner
-    new THREE.Vector3(-100, 0, 500),   // Maggotts & Becketts
-    new THREE.Vector3(200, 0, 500),    // Chapel
-    new THREE.Vector3(400, 0, 350),    // Hangar Straight
-    new THREE.Vector3(350, 0, 150),    // Stowe Corner
-    new THREE.Vector3(150, 0, -100)    // Vale & Club
+// 4. 绝对不交叉的顺畅赛道几何路径 (闭合环形 2D Path)
+const trackPoints2D = [
+    new THREE.Vector2(0, 0),
+    new THREE.Vector2(300, 200),
+    new THREE.Vector2(550, 0),
+    new THREE.Vector2(400, -350),
+    new THREE.Vector2(-250, -400),
+    new THREE.Vector2(-550, -150),
+    new THREE.Vector2(-400, 300),
+    new THREE.Vector2(-100, 600),
+    new THREE.Vector2(250, 600),
+    new THREE.Vector2(500, 400),
+    new THREE.Vector2(450, 200),
+    new THREE.Vector2(200, -100)
 ];
 
-// 使用 centripetal 参数算法，彻底防止曲线过冲自交
-const trackPath = new THREE.CatmullRomCurve3(silverstonePoints, true, 'centripetal', 0.5);
-const trackWidth = 22;
-const trackSegments = 800;
+const trackCurve2D = new THREE.CurvePath();
+for (let i = 0; i < trackPoints2D.length; i++) {
+    const p1 = trackPoints2D[i];
+    const p2 = trackPoints2D[(i + 1) % trackPoints2D.length];
+    trackCurve2D.add(new THREE.LineCurve(p1, p2));
+}
 
-// 5. 生成赛道网格 (带红白路肩)
+// 转换为 3D 曲线
+const silverstone3DPoints = trackPoints2D.map(p => new THREE.Vector3(p.x, 0, p.y));
+const trackPath = new THREE.CatmullRomCurve3(silverstone3DPoints, true, 'centripetal', 0.5);
+
+const trackWidth = 24;
+const trackSegments = 600;
+
+// 5. 生成赛道沥青路面
 const trackGeometry = new THREE.BufferGeometry();
 const positions = [];
-const uvs = [];
+const trackLeftEdge = [];
+const trackRightEdge = [];
 
 for (let i = 0; i <= trackSegments; i++) {
     const t = i / trackSegments;
@@ -67,11 +77,12 @@ for (let i = 0; i <= trackSegments; i++) {
     const left = pt.clone().add(normal.clone().multiplyScalar(trackWidth / 2));
     const right = pt.clone().sub(normal.clone().multiplyScalar(trackWidth / 2));
 
-    positions.push(left.x, left.y + 0.1, left.z);
-    positions.push(right.x, right.y + 0.1, right.z);
+    positions.push(left.x, left.y + 0.05, left.z);
+    positions.push(right.x, right.y + 0.05, right.z);
 
-    uvs.push(0, i / 10);
-    uvs.push(1, i / 10);
+    // 记录边缘坐标用于构建连贯实体墙
+    trackLeftEdge.push(left);
+    trackRightEdge.push(right);
 }
 
 const indices = [];
@@ -81,109 +92,108 @@ for (let i = 0; i < trackSegments; i++) {
 }
 
 trackGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-trackGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
 trackGeometry.setIndex(indices);
 trackGeometry.computeVertexNormals();
 
 const trackMesh = new THREE.Mesh(
     trackGeometry,
-    new THREE.MeshStandardMaterial({ color: 0x282828, roughness: 0.8 })
+    new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 })
 );
 trackMesh.receiveShadow = true;
 scene.add(trackMesh);
 
-// 6. 严密按法线距离偏移生成左右独立护栏 (解决交叉)
-const barrierMaterial = new THREE.MeshStandardMaterial({ color: 0xe0e0e0, roughness: 0.4 });
-const barrierGeo = new THREE.BoxGeometry(1.2, 2.0, 4.0);
-const barrierBoxes = [];
+// 6. 核心修改：生成无缝连贯的【纯石心/混凝土连续墙】
+const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.3 });
+const wallHeight = 2.5;
+const wallThickness = 1.2;
 
-function generateBarriers(offsetDistance) {
-    const count = 350;
-    for (let i = 0; i < count; i++) {
-        const t = i / count;
-        const pt = trackPath.getPointAt(t);
-        const tangent = trackPath.getTangentAt(t);
-        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+function createSolidWall(edgePoints, isOutward) {
+    const wallGeo = new THREE.BufferGeometry();
+    const wallPos = [];
+    const wallIndices = [];
+    const len = edgePoints.length;
 
-        // 护栏生成在赛道边缘外侧 2 个单位处
-        const pos = pt.clone().add(normal.multiplyScalar(offsetDistance));
-        const barrier = new THREE.Mesh(barrierGeo, barrierMaterial);
-        barrier.position.set(pos.x, 1.0, pos.z);
-        barrier.rotation.y = Math.atan2(tangent.x, tangent.z);
-        barrier.castShadow = true;
-        scene.add(barrier);
+    for (let i = 0; i < len; i++) {
+        const pt = edgePoints[i];
+        const nextPt = edgePoints[(i + 1) % len];
+        const dir = nextPt.clone().sub(pt).normalize();
+        const normal = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(isOutward ? 1 : -1);
 
-        const box = new THREE.Box3().setFromObject(barrier);
-        barrierBoxes.push(box);
+        const pInnerBottom = pt.clone();
+        const pInnerTop = pt.clone().add(new THREE.Vector3(0, wallHeight, 0));
+        const pOuterBottom = pt.clone().add(normal.clone().multiplyScalar(wallThickness));
+        const pOuterTop = pInnerTop.clone().add(normal.clone().multiplyScalar(wallThickness));
+
+        wallPos.push(
+            pInnerBottom.x, pInnerBottom.y, pInnerBottom.z,
+            pInnerTop.x, pInnerTop.y, pInnerTop.z,
+            pOuterTop.x, pOuterTop.y, pOuterTop.z,
+            pOuterBottom.x, pOuterBottom.y, pOuterBottom.z
+        );
+
+        const base = i * 4;
+        const nextBase = ((i + 1) % len) * 4;
+
+        // 内侧面
+        wallIndices.push(base, base + 1, nextBase);
+        wallIndices.push(nextBase, base + 1, nextBase + 1);
+        // 顶面
+        wallIndices.push(base + 1, base + 2, nextBase + 1);
+        wallIndices.push(nextBase + 1, base + 2, nextBase + 2);
     }
+
+    wallGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallPos, 3));
+    wallGeo.setIndex(wallIndices);
+    wallGeo.computeVertexNormals();
+
+    const wallMesh = new THREE.Mesh(wallGeo, wallMaterial);
+    wallMesh.castShadow = true;
+    wallMesh.receiveShadow = true;
+    scene.add(wallMesh);
 }
 
-// 赛道宽度 22，左右护栏分别偏移 +14 和 -14，留出安全边距
-generateBarriers(trackWidth / 2 + 3);
-generateBarriers(-(trackWidth / 2 + 3));
+// 自动生成左侧与右侧一体化连贯石墙
+createSolidWall(trackLeftEdge, true);
+createSolidWall(trackRightEdge, false);
 
-// 7. 赛车建模
+// 7. 赛车模型
 const carGroup = new THREE.Group();
 
-// 车身
 const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd90429, metalness: 0.5, roughness: 0.2 });
 const carBody = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.6, 4.2), bodyMat);
 carBody.position.y = 0.6;
 carBody.castShadow = true;
 carGroup.add(carBody);
 
-// 座舱
 const cabinMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.1 });
 const carCabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 2.0), cabinMat);
 carCabin.position.set(0, 1.15, -0.2);
 carCabin.castShadow = true;
 carGroup.add(carCabin);
 
-// 尾翼
 const wingMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
 const wing = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 0.6), wingMat);
 wing.position.set(0, 1.3, -2.0);
 wing.castShadow = true;
 carGroup.add(wing);
 
-const wingStand = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.4, 0.2), wingMat);
-wingStand.position.set(0, 1.05, -2.0);
-carGroup.add(wingStand);
-
-// 车轮
 const wheelGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.4, 24);
 const wheelMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 });
 wheelGeo.rotateZ(Math.PI / 2);
 
-const wheelPositions = [
-    [-1.25, 0.45, 1.3],
-    [1.25, 0.45, 1.3],
-    [-1.25, 0.45, -1.3],
-    [1.25, 0.45, -1.3]
-];
-
-wheelPositions.forEach(pos => {
+[[-1.25, 0.45, 1.3], [1.25, 0.45, 1.3], [-1.25, 0.45, -1.3], [1.25, 0.45, -1.3]].forEach(pos => {
     const wheel = new THREE.Mesh(wheelGeo, wheelMat);
     wheel.position.set(...pos);
     wheel.castShadow = true;
     carGroup.add(wheel);
 });
 
-// 将赛车放在赛道起点
-const startPoint = trackPath.getPointAt(0);
-carGroup.position.set(startPoint.x, 0, startPoint.z);
+const startPt = trackPath.getPointAt(0);
+carGroup.position.set(startPt.x, 0, startPt.z);
 scene.add(carGroup);
 
-// 8. 控制参数
-const carStats = {
-    speed: 0,
-    maxSpeed: 3.0,
-    acceleration: 0.05,
-    friction: 0.96,
-    steering: 0.035,
-    angle: 0
-};
-
+// 8. 赛车物理操控参数
+const carStats = { speed: 0, maxSpeed: 3.0, acceleration: 0.05, friction: 0.96, steering: 0.035, angle: 0 };
 const keys = { Forward: false, Backward: false, Left: false, Right: false };
 
 window.addEventListener('keydown', (e) => {
@@ -200,11 +210,10 @@ window.addEventListener('keyup', (e) => {
     if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.Right = false;
 });
 
-// 9. 渲染与物理循环
+// 9. 主循环 (动画与平滑第三人称相机)
 function animate() {
     requestAnimationFrame(animate);
 
-    // 动力学计算
     if (keys.Forward) carStats.speed = Math.min(carStats.speed + carStats.acceleration, carStats.maxSpeed);
     if (keys.Backward) carStats.speed = Math.max(carStats.speed - carStats.acceleration, -carStats.maxSpeed / 2);
 
@@ -218,31 +227,10 @@ function animate() {
 
     carGroup.rotation.y = carStats.angle;
 
-    // 移动与碰撞
-    const nextX = carGroup.position.x + Math.sin(carStats.angle) * carStats.speed;
-    const nextZ = carGroup.position.z + Math.cos(carStats.angle) * carStats.speed;
+    carGroup.position.x += Math.sin(carStats.angle) * carStats.speed;
+    carGroup.position.z += Math.cos(carStats.angle) * carStats.speed;
 
-    const carBox = new THREE.Box3().setFromCenterAndSize(
-        new THREE.Vector3(nextX, 1, nextZ),
-        new THREE.Vector3(2.5, 1, 4.5)
-    );
-
-    let hasCollided = false;
-    for (let i = 0; i < barrierBoxes.length; i++) {
-        if (carBox.intersectsBox(barrierBoxes[i])) {
-            hasCollided = true;
-            break;
-        }
-    }
-
-    if (!hasCollided) {
-        carGroup.position.x = nextX;
-        carGroup.position.z = nextZ;
-    } else {
-        carStats.speed = -carStats.speed * 0.4; // 碰撞减速弹回
-    }
-
-    // 平滑第三人称相机跟踪
+    // 平滑第三人称相机
     const cameraDistance = 20;
     const cameraHeight = 8;
 
@@ -253,18 +241,11 @@ function animate() {
     );
 
     camera.position.lerp(idealCameraPos, 0.1);
-
-    const lookAtTarget = new THREE.Vector3(
-        carGroup.position.x + Math.sin(carStats.angle) * 8,
-        carGroup.position.y + 1.2,
-        carGroup.position.z + Math.cos(carStats.angle) * 8
-    );
-    camera.lookAt(lookAtTarget);
+    camera.lookAt(carGroup.position.x, carGroup.position.y + 1.2, carGroup.position.z);
 
     renderer.render(scene, camera);
 }
 
-// 屏幕适配
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
