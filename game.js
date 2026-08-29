@@ -1,9 +1,9 @@
-// 1. 初始化场景、相机与渲染器
+// 1. 初始化场景、相机与渲染器（拉斯维加斯夜景风格）
 const container = document.getElementById('canvas-container');
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.FogExp2(0x87ceeb, 0.0005);
+scene.background = new THREE.Color(0x0a0a1a); // 拉斯维加斯夜空
+scene.fog = new THREE.FogExp2(0x0a0a1a, 0.0006);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 4000);
 
@@ -12,28 +12,36 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
-// 2. 光源
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+// 2. 光源与拉斯维加斯霓虹灯效
+const ambientLight = new THREE.AmbientLight(0x404065, 0.8);
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+// 主平行光
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
 dirLight.position.set(300, 600, 300);
 dirLight.castShadow = true;
-dirLight.shadow.mapSize.width = 2048;
-dirLight.shadow.mapSize.height = 2048;
 scene.add(dirLight);
 
-// 3. 草地地面
+// 拉斯维加斯风格粉色/青色霓虹氛围光
+const neonPink = new THREE.PointLight(0xff007f, 2, 800);
+neonPink.position.set(200, 50, 200);
+scene.add(neonPink);
+
+const neonCyan = new THREE.PointLight(0x00f3ff, 2, 800);
+neonCyan.position.set(-200, 50, -200);
+scene.add(neonCyan);
+
+// 3. 城市地面（深色城市沥青路面）
 const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(5000, 5000),
-    new THREE.MeshLambertMaterial({ color: 0x3b7a57 })
+    new THREE.MeshStandardMaterial({ color: 0x111116, roughness: 0.9 })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-// 4. 绝对不交叉的顺畅赛道几何路径 (闭合环形 2D Path)
-const trackPoints2D = [
+// 4. 街道弯道拓扑路径
+const vegasPoints2D = [
     new THREE.Vector2(0, 0),
     new THREE.Vector2(300, 200),
     new THREE.Vector2(550, 0),
@@ -48,21 +56,13 @@ const trackPoints2D = [
     new THREE.Vector2(200, -100)
 ];
 
-const trackCurve2D = new THREE.CurvePath();
-for (let i = 0; i < trackPoints2D.length; i++) {
-    const p1 = trackPoints2D[i];
-    const p2 = trackPoints2D[(i + 1) % trackPoints2D.length];
-    trackCurve2D.add(new THREE.LineCurve(p1, p2));
-}
-
-// 转换为 3D 曲线
-const silverstone3DPoints = trackPoints2D.map(p => new THREE.Vector3(p.x, 0, p.y));
-const trackPath = new THREE.CatmullRomCurve3(silverstone3DPoints, true, 'centripetal', 0.5);
+const vegas3DPoints = vegasPoints2D.map(p => new THREE.Vector3(p.x, 0, p.y));
+const trackPath = new THREE.CatmullRomCurve3(vegas3DPoints, true, 'centripetal', 0.5);
 
 const trackWidth = 24;
 const trackSegments = 600;
 
-// 5. 生成赛道沥青路面
+// 5. 生成街道赛道路面
 const trackGeometry = new THREE.BufferGeometry();
 const positions = [];
 const trackLeftEdge = [];
@@ -80,7 +80,6 @@ for (let i = 0; i <= trackSegments; i++) {
     positions.push(left.x, left.y + 0.05, left.z);
     positions.push(right.x, right.y + 0.05, right.z);
 
-    // 记录边缘坐标用于构建连贯实体墙
     trackLeftEdge.push(left);
     trackRightEdge.push(right);
 }
@@ -97,75 +96,88 @@ trackGeometry.computeVertexNormals();
 
 const trackMesh = new THREE.Mesh(
     trackGeometry,
-    new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 })
+    new THREE.MeshStandardMaterial({ color: 0x1f1f28, roughness: 0.5 })
 );
 trackMesh.receiveShadow = true;
 scene.add(trackMesh);
 
-// 6. 核心修改：生成无缝连贯的【纯石心/混凝土连续墙】
-const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.3 });
+// 6. 生成石墙（部分随机隐形、不显示，且无碰撞判定可直接穿透）
+const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x888899, roughness: 0.4 });
 const wallHeight = 2.5;
 const wallThickness = 1.2;
 
-function createSolidWall(edgePoints, isOutward) {
-    const wallGeo = new THREE.BufferGeometry();
-    const wallPos = [];
-    const wallIndices = [];
+function createDiscontinuousWalls(edgePoints, isOutward) {
     const len = edgePoints.length;
+    // 每 20 个采样点拆分为独立墙体段
+    const chunkSize = 20;
 
-    for (let i = 0; i < len; i++) {
-        const pt = edgePoints[i];
-        const nextPt = edgePoints[(i + 1) % len];
-        const dir = nextPt.clone().sub(pt).normalize();
-        const normal = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(isOutward ? 1 : -1);
+    for (let chunk = 0; chunk < len; chunk += chunkSize) {
+        // 50% 概率不生成该段石墙（实现有的石墙不显示的效果）
+        if (Math.random() < 0.5) continue;
 
-        const pInnerBottom = pt.clone();
-        const pInnerTop = pt.clone().add(new THREE.Vector3(0, wallHeight, 0));
-        const pOuterBottom = pt.clone().add(normal.clone().multiplyScalar(wallThickness));
-        const pOuterTop = pInnerTop.clone().add(normal.clone().multiplyScalar(wallThickness));
+        const wallGeo = new THREE.BufferGeometry();
+        const wallPos = [];
+        const wallIndices = [];
 
-        wallPos.push(
-            pInnerBottom.x, pInnerBottom.y, pInnerBottom.z,
-            pInnerTop.x, pInnerTop.y, pInnerTop.z,
-            pOuterTop.x, pOuterTop.y, pOuterTop.z,
-            pOuterBottom.x, pOuterBottom.y, pOuterBottom.z
-        );
+        const endIdx = Math.min(chunk + chunkSize, len);
+        let localIdx = 0;
 
-        const base = i * 4;
-        const nextBase = ((i + 1) % len) * 4;
+        for (let i = chunk; i < endIdx; i++) {
+            const pt = edgePoints[i];
+            const nextPt = edgePoints[(i + 1) % len];
+            const dir = nextPt.clone().sub(pt).normalize();
+            const normal = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(isOutward ? 1 : -1);
 
-        // 内侧面
-        wallIndices.push(base, base + 1, nextBase);
-        wallIndices.push(nextBase, base + 1, nextBase + 1);
-        // 顶面
-        wallIndices.push(base + 1, base + 2, nextBase + 1);
-        wallIndices.push(nextBase + 1, base + 2, nextBase + 2);
+            const pInnerBottom = pt.clone();
+            const pInnerTop = pt.clone().add(new THREE.Vector3(0, wallHeight, 0));
+            const pOuterBottom = pt.clone().add(normal.clone().multiplyScalar(wallThickness));
+            const pOuterTop = pInnerTop.clone().add(normal.clone().multiplyScalar(wallThickness));
+
+            wallPos.push(
+                pInnerBottom.x, pInnerBottom.y, pInnerBottom.z,
+                pInnerTop.x, pInnerTop.y, pInnerTop.z,
+                pOuterTop.x, pOuterTop.y, pOuterTop.z,
+                pOuterBottom.x, pOuterBottom.y, pOuterBottom.z
+            );
+
+            if (i < endIdx - 1) {
+                const base = localIdx * 4;
+                const nextBase = (localIdx + 1) * 4;
+
+                // 内侧面
+                wallIndices.push(base, base + 1, nextBase);
+                wallIndices.push(nextBase, base + 1, nextBase + 1);
+                // 顶面
+                wallIndices.push(base + 1, base + 2, nextBase + 1);
+                wallIndices.push(nextBase + 1, base + 2, nextBase + 2);
+            }
+            localIdx++;
+        }
+
+        wallGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallPos, 3));
+        wallGeo.setIndex(wallIndices);
+        wallGeo.computeVertexNormals();
+
+        const wallMesh = new THREE.Mesh(wallGeo, wallMaterial);
+        wallMesh.castShadow = true;
+        scene.add(wallMesh);
     }
-
-    wallGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallPos, 3));
-    wallGeo.setIndex(wallIndices);
-    wallGeo.computeVertexNormals();
-
-    const wallMesh = new THREE.Mesh(wallGeo, wallMaterial);
-    wallMesh.castShadow = true;
-    wallMesh.receiveShadow = true;
-    scene.add(wallMesh);
 }
 
-// 自动生成左侧与右侧一体化连贯石墙
-createSolidWall(trackLeftEdge, true);
-createSolidWall(trackRightEdge, false);
+// 左右两侧生成部分显示的石墙
+createDiscontinuousWalls(trackLeftEdge, true);
+createDiscontinuousWalls(trackRightEdge, false);
 
-// 7. 赛车模型
+// 7. 赛车模型（炫酷深红色调）
 const carGroup = new THREE.Group();
 
-const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd90429, metalness: 0.5, roughness: 0.2 });
+const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff0033, metalness: 0.8, roughness: 0.2 });
 const carBody = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.6, 4.2), bodyMat);
 carBody.position.y = 0.6;
 carBody.castShadow = true;
 carGroup.add(carBody);
 
-const cabinMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.1 });
+const cabinMat = new THREE.MeshStandardMaterial({ color: 0x050505, metalness: 0.9, roughness: 0.1 });
 const carCabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 2.0), cabinMat);
 carCabin.position.set(0, 1.15, -0.2);
 carCabin.castShadow = true;
@@ -178,7 +190,7 @@ wing.castShadow = true;
 carGroup.add(wing);
 
 const wheelGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.4, 24);
-const wheelMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 });
+const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
 wheelGeo.rotateZ(Math.PI / 2);
 
 [[-1.25, 0.45, 1.3], [1.25, 0.45, 1.3], [-1.25, 0.45, -1.3], [1.25, 0.45, -1.3]].forEach(pos => {
@@ -192,8 +204,8 @@ const startPt = trackPath.getPointAt(0);
 carGroup.position.set(startPt.x, 0, startPt.z);
 scene.add(carGroup);
 
-// 8. 赛车物理操控参数
-const carStats = { speed: 0, maxSpeed: 3.0, acceleration: 0.05, friction: 0.96, steering: 0.035, angle: 0 };
+// 8. 赛车操控物理
+const carStats = { speed: 0, maxSpeed: 3.2, acceleration: 0.06, friction: 0.96, steering: 0.035, angle: 0 };
 const keys = { Forward: false, Backward: false, Left: false, Right: false };
 
 window.addEventListener('keydown', (e) => {
@@ -210,7 +222,7 @@ window.addEventListener('keyup', (e) => {
     if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.Right = false;
 });
 
-// 9. 主循环 (动画与平滑第三人称相机)
+// 9. 主动画循环（已移除撞墙阻挡判定，可随意穿越石墙）
 function animate() {
     requestAnimationFrame(animate);
 
@@ -227,10 +239,11 @@ function animate() {
 
     carGroup.rotation.y = carStats.angle;
 
+    // 直接更新位置，无阻挡穿越
     carGroup.position.x += Math.sin(carStats.angle) * carStats.speed;
     carGroup.position.z += Math.cos(carStats.angle) * carStats.speed;
 
-    // 平滑第三人称相机
+    // 平滑第三人称相机跟踪
     const cameraDistance = 20;
     const cameraHeight = 8;
 
