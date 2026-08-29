@@ -3,38 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>F1 3D Racing Game</title>
+    <title>Silverstone 赛车游戏</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Three.js CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-
-    <div id="game-container"></div>
-
-    <div id="ui-overlay">
-        <div class="hud-panel top-bar">
-            <div class="game-title">F1 Grand Prix 3D</div>
-            <div class="controls-hint">
-                控制: <span>W / ↑</span> 加速 | <span>S / ↓</span> 刹车/倒车 | <span>A / D</span> 转向 | <span>R</span> 重置
-            </div>
-        </div>
-
-        <div class="hud-panel dashboard">
-            <div class="speedometer">
-                <span id="speed-display" class="speed-val">0</span>
-                <span class="speed-unit">KM/H</span>
-            </div>
-        </div>
-
-        <div id="instructions">
-            <h2>F1 赛车模拟器</h2>
-            <p>使用键盘控制赛车在赛道上驰骋！</p>
-            <p>摄像机已设置为**正后方第三人称视角**，平滑跟随车身旋转与移动。</p>
-            <button id="start-btn" onclick="startGame()">开始驾驶</button>
-        </div>
+    <div id="hud">
+        <h1>Silverstone Circuit</h1>
+        <p>控制方式：方向键 (↑ ↓ ← →) 或 WASD</p>
     </div>
+    <div id="canvas-container"></div>
 
+    <!-- 引入 Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="game.js"></script>
 </body>
 </html>
