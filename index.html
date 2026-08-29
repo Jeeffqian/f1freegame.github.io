@@ -1,28 +1,40 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>F1 Free Game</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F1 3D Racing Game</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-  <div id="game"></div>
-  <div id="loading">Loading Taas Circuit…</div>
-  <div id="hud">
-    <div class="brand">F1 FREE GAME</div>
-    <div class="speed"><span id="speed">0</span> <small>KM/H</small></div>
-    <div class="help">W ACCELERATE &nbsp; A / D STEER &nbsp; S BRAKE</div>
-  </div>
 
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
-    }
-  }
-  </script>
-  <script type="module" src="game.js"></script>
+    <div id="game-container"></div>
+
+    <div id="ui-overlay">
+        <div class="hud-panel top-bar">
+            <div class="game-title">F1 Grand Prix 3D</div>
+            <div class="controls-hint">
+                控制: <span>W / ↑</span> 加速 | <span>S / ↓</span> 刹车/倒车 | <span>A / D</span> 转向 | <span>R</span> 重置
+            </div>
+        </div>
+
+        <div class="hud-panel dashboard">
+            <div class="speedometer">
+                <span id="speed-display" class="speed-val">0</span>
+                <span class="speed-unit">KM/H</span>
+            </div>
+        </div>
+
+        <div id="instructions">
+            <h2>F1 赛车模拟器</h2>
+            <p>使用键盘控制赛车在赛道上驰骋！</p>
+            <p>摄像机已设置为**正后方第三人称视角**，平滑跟随车身旋转与移动。</p>
+            <button id="start-btn" onclick="startGame()">开始驾驶</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
 </body>
 </html>
