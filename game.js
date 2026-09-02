@@ -43,20 +43,21 @@ const desiredCameraPosition = new THREE.Vector3();
 const desiredLookTarget = new THREE.Vector3();
 const smoothLookTarget = new THREE.Vector3();
 
-function isCarPart(object) {
-  // The car is made of Plane.*, Cylinder.*, plus four root-level Cube parts.
-  // Cube.175 is the large chassis/rear assembly that was left behind before.
-  return object.isMesh && (
-    /^(Plane|Cylinder)(?:\.\d+)?$/.test(object.name) ||
-    ['Cube.175', 'Cube.176', 'Cube.177', 'Cube.178'].includes(object.name)
-  );
-}
-
 function makeCarController(model) {
   const parts = [];
   model.updateMatrixWorld(true);
+
+  // Cube.175 is inside the car, but only serves as a centre marker. We never
+  // depend on Plane.067 being present. Every mesh close to this marker is a
+  // car part; the circuit meshes are many units away.
+  const anchor = model.getObjectByName('Cube.175') || model.getObjectByName('Plane.067');
+  if (!anchor) throw new Error('No car anchor found in the GLB.');
+
+  const anchorPosition = anchor.getWorldPosition(new THREE.Vector3());
   model.traverse(object => {
-    if (isCarPart(object)) parts.push(object);
+    if (!object.isMesh) return;
+    const position = object.getWorldPosition(new THREE.Vector3());
+    if (position.distanceTo(anchorPosition) < 6) parts.push(object);
   });
 
   if (!parts.length) throw new Error('No car meshes found in the GLB.');
