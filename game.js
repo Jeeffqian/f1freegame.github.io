@@ -44,9 +44,12 @@ const desiredLookTarget = new THREE.Vector3();
 const smoothLookTarget = new THREE.Vector3();
 
 function isCarPart(object) {
-  // The car meshes in this GLB are Plane.* and Cylinder.*. This avoids
-  // making startup depend on a single optional mesh such as Plane.067.
-  return object.isMesh && /^(Plane|Cylinder)(?:\.\d+)?$/.test(object.name);
+  // The car is made of Plane.*, Cylinder.*, plus four root-level Cube parts.
+  // Cube.175 is the large chassis/rear assembly that was left behind before.
+  return object.isMesh && (
+    /^(Plane|Cylinder)(?:\.\d+)?$/.test(object.name) ||
+    ['Cube.175', 'Cube.176', 'Cube.177', 'Cube.178'].includes(object.name)
+  );
 }
 
 function makeCarController(model) {
